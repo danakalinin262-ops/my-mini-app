@@ -2,83 +2,221 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Simple Stars Mini App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Farm Mini App + Stars</title>
   <script src="https://telegram.org"></script>
   <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
     body {
-      font-family: sans-serif;
-      background-color: var(--tg-theme-bg-color, #ffffff);
-      color: var(--tg-theme-text-color, #000000);
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--tg-theme-bg-color, #18222d);
+      color: var(--tg-theme-text-color, #ffffff);
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
+      justify-content: space-between;
+      min-height: 100vh;
       text-align: center;
     }
-    button {
-      background-color: #2ea6ff;
-      color: #ffffff;
+
+    .header {
+      width: 100%;
+      padding: 12px;
+      background-color: var(--tg-theme-secondary-bg-color, #232e3c);
+      border-radius: 16px;
+      font-size: 15px;
+      color: var(--tg-theme-hint-color, #8b9bb4);
+    }
+
+    .header strong {
+      color: var(--tg-theme-text-color, #ffffff);
+    }
+
+    .counter-box {
+      margin: 15px 0;
+    }
+
+    .score {
+      font-size: 46px;
+      font-weight: 800;
+      margin: 6px 0;
+    }
+
+    .tap-btn {
+      width: 170px;
+      height: 170px;
+      border-radius: 50%;
+      border: none;
+      background: linear-gradient(145deg, #58b947, #357a29);
+      color: white;
+      font-size: 64px;
+      box-shadow: 0 10px 25px rgba(88, 185, 71, 0.4);
+      cursor: pointer;
+      transition: transform 0.08s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .tap-btn:active {
+      transform: scale(0.92);
+    }
+
+    .actions {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 15px;
       border: none;
       border-radius: 12px;
-      padding: 16px 28px;
-      font-size: 18px;
-      font-weight: bold;
+      font-size: 16px;
+      font-weight: 600;
       cursor: pointer;
-      margin-top: 20px;
+      background-color: var(--tg-theme-button-color, #2ea6ff);
+      color: var(--tg-theme-button-text-color, #ffffff);
     }
-    button:active {
-      transform: scale(0.97);
+
+    .btn:active {
+      opacity: 0.85;
+    }
+
+    .btn-stars {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #ffffff;
+      box-shadow: 0 4px 15px rgba(245, 158, 11, 0.35);
+    }
+
+    .btn-secondary {
+      background-color: var(--tg-theme-secondary-bg-color, #232e3c);
+      color: var(--tg-theme-text-color, #ffffff);
     }
   </style>
 </head>
 <body>
 
-  <h2>🌾 VIP Farmer Pack</h2>
-  <p>Coins: <strong id="coins">0</strong></p>
-  <button onclick="buyItem()">Buy 100 Coins for 1 ⭐</button>
+  <div class="header">
+    Welcome, <strong id="userName">Farmer</strong>! 👋
+  </div>
+
+  <div class="counter-box">
+    <div style="font-size: 13px; opacity: 0.7;">YOUR BALANCE</div>
+    <div class="score">🪙 <span id="coins">0</span></div>
+  </div>
+
+  <button class="tap-btn" onclick="tapCoin()">🌾</button>
+
+  <div class="actions">
+    <!-- Кнопка покупки за Telegram Stars -->
+    <button class="btn btn-stars" id="starBuyBtn" onclick="buyWithStars()">
+      Buy +100 Coins for 1 ⭐
+    </button>
+
+    <button class="btn" onclick="buyBoost()">⚡ Upgrade Tap (50 🪙)</button>
+    <button class="btn btn-secondary" onclick="inviteFriend()">👥 Invite a Friend</button>
+  </div>
 
   <script>
     const tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
 
-    let coins = 0;
+    // ⚠️ ВСТАВЬТЕ СЮДА ССЫЛКУ НА ВАШ ENDPOINT ИЗ TELEGRAM SERVERLESS:
+    const INVOICE_ENDPOINT = "https://ВАШ_АДРЕС_SERVERLESS/create-invoice";
 
-    // Укажите адрес вашего Python-сервера (обязательно HTTPS!)
-    const BACKEND_URL = "https://ВАШ_://xn--b1afb6bcb.com";
+    const user = tg.initDataUnsafe?.user;
+    if (user && user.first_name) {
+      document.getElementById('userName').textContent = user.first_name;
+    }
 
-    async function buyItem() {
+    let coins = Number(localStorage.getItem('coins')) || 0;
+    let power = Number(localStorage.getItem('power')) || 1;
+    updateUI();
+
+    function tapCoin() {
+      coins += power;
+      saveProgress();
+      updateUI();
+      if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+    }
+
+    async function buyWithStars() {
+      const btn = document.getElementById('starBuyBtn');
+      const originalText = btn.textContent;
+      btn.textContent = "Creating invoice...";
+      btn.disabled = true;
+
       try {
-        // 1. Запрашиваем у нашего сервера ссылку на счёт
-        const response = await fetch(BACKEND_URL, {
+        // 1. Запрашиваем платёжную ссылку у Telegram Serverless
+        const res = await fetch(INVOICE_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json" }
         });
-        const data = await response.json();
+        const data = await res.json();
 
         if (!data.invoice_link) {
-          tg.showAlert("Ошибка: не удалось создать счёт");
-          return;
+          throw new Error(data.error || "No invoice link returned");
         }
 
-        // 2. Открываем окно оплаты Telegram Stars внутри Mini App
-        tg.openInvoice(data.invoice_link, function(status) {
+        // 2. Открываем нативное окно оплаты Telegram Stars
+        tg.openInvoice(data.invoice_link, (status) => {
           if (status === "paid") {
             coins += 100;
-            document.getElementById("coins").textContent = coins;
-            tg.showAlert("Оплата прошла успешно! +100 монет ⭐");
+            saveProgress();
+            updateUI();
+            if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+            tg.showAlert("Payment successful! +100 coins added ⭐");
           } else if (status === "cancelled") {
-            tg.showAlert("Оплата отменена.");
+            tg.showAlert("Payment cancelled.");
           } else {
-            tg.showAlert("Ошибка оплаты: " + status);
+            tg.showAlert("Payment status: " + status);
           }
         });
       } catch (err) {
-        tg.showAlert("Нет связи с сервером: " + err.message);
+        tg.showAlert("Error: " + err.message);
+      } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
       }
+    }
+
+    function buyBoost() {
+      if (coins >= 50) {
+        coins -= 50;
+        power += 1;
+        saveProgress();
+        updateUI();
+        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+        tg.showAlert(`Upgraded! Now +${power} coins per tap.`);
+      } else {
+        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+        tg.showAlert('Not enough coins! Need 50 🪙');
+      }
+    }
+
+    function inviteFriend() {
+      const shareText = encodeURIComponent('Play this Mini App with me! 🌾');
+      tg.openTelegramLink(`https://t.me{shareText}`);
+    }
+
+    function saveProgress() {
+      localStorage.setItem('coins', coins);
+      localStorage.setItem('power', power);
+    }
+
+    function updateUI() {
+      document.getElementById('coins').textContent = coins;
     }
   </script>
 </body>
